@@ -392,9 +392,9 @@ public:
 
 class statistics {
 public:
-  statistics(const std::string &id, group &gr, int t = 100, int it = 1)
+  statistics(const std::string &id, group &gr, int t = 100)
     : identifier_(id), gr_(gr), times_(t)
-    , count_(0), iters_(it)
+    , count_(0), iters_(0), icnt_(0)
     , start_(0, 0), end_(0, 0) {
     std::cout << "benchmarking "
               << gr.identifier()
@@ -410,16 +410,40 @@ public:
               << "in estimated " << format_time(end_ - start_)
               << std::endl;
 
-    sample samp(lap_time_.size() - 1);
+    sample samp(lap_time_.size() - 0.1);
     for (size_t i = 0; i + 1 < lap_time_.size(); ++i)
-      samp[i] = std::max(0.0, (double)(lap_time_[i + 1] - lap_time_[i]));
+      samp[i] = std::max(0.0, (double)(lap_time_[i + 1] - lap_time_[i]) / iters_);
 
     analyze(samp);
+
+    std::cout << std::endl;
   }
 
   bool lap() {
+    ++icnt_;
+
+    if (iters_ == 0) {
+      clock_time cur = get_clock_time();
+
+      if (cur - start_ >= 0.1) {
+        iters_ = std::max(icnt_, 2) - 1;
+        icnt_ = 0;
+        lap_time_.reserve(times_ + 1);
+        start_ = get_clock_time();
+        lap_time_.push_back(get_clock_time());
+      }
+
+      return true;
+    }
+
+    if (icnt_ < iters_)
+      return true;
+
+    icnt_ = 0;
+    ++count_;
+
     lap_time_.push_back(get_clock_time());
-    if (++count_ > times_) {
+    if (count_ >= times_) {
       end_ = get_clock_time();
       return false;
     }
@@ -435,14 +459,14 @@ private:
     std::cout << "bootstrapping with " << num_resamples
               << " resamples" << std::endl;
 
+    std::vector<estimator> ests;
+    ests.push_back(mean());
+    ests.push_back(std_dev());
+
     const char *names[] = {
       "mean",
       "std dev",
     };
-
-    std::vector<estimator> ests;
-    ests.push_back(mean());
-    ests.push_back(std_dev());
 
     std::vector<sample> res;
     bootstrapping::resample(ests, num_resamples, samp, res);
@@ -466,6 +490,7 @@ private:
   const int times_;
   int count_;
   int iters_;
+  int icnt_;
   clock_time start_, end_;
   std::vector<clock_time> lap_time_;
 
